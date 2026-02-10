@@ -2,6 +2,8 @@ apiVersion: nvidia.com/v1alpha1
 kind: DynamoGraphDeployment
 metadata:
   name: rlm
+  annotations:
+    nvidia.com/enable-grove: "false"
 spec:
   services:
     # === RLM Orchestrator (no GPU) ===
@@ -19,7 +21,8 @@ spec:
           value: "30"
       extraPodSpec:
         mainContainer:
-          image: <registry>/rlm-orchestrator:latest
+          image: rlm-orchestrator:latest
+          imagePullPolicy: Never
           command: ["python3", "-m", "uvicorn"]
           args: ["rlm_dynamo.server:app", "--host", "0.0.0.0", "--port", "9090"]
           ports:
@@ -29,7 +32,6 @@ spec:
 
     # === Inference Frontend (OpenAI-compatible API) ===
     Frontend:
-      envFromSecret: hf-token-secret
       componentType: frontend
       replicas: 1
       extraPodSpec:
@@ -38,7 +40,6 @@ spec:
 
     # === Inference Worker (GPU) ===
     Worker:
-      envFromSecret: hf-token-secret
       componentType: worker
       replicas: 1
       resources:
@@ -62,7 +63,8 @@ spec:
           value: "Qwen/Qwen3-0.6B"
       extraPodSpec:
         mainContainer:
-          image: <registry>/rlm-sandbox:latest
+          image: rlm-sandbox:latest
+          imagePullPolicy: Never
           command: ["python3", "-m", "uvicorn"]
           args: ["rlm_dynamo.sandbox:app", "--host", "0.0.0.0", "--port", "9090"]
           ports:
