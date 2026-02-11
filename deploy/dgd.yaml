@@ -19,6 +19,10 @@ spec:
           value: "http://rlm-sandboxpool:9090"
         - name: RLM_MAX_ITERATIONS
           value: "30"
+        - name: RLM_LOG_ENABLED
+          value: "true"
+        - name: RLM_LOG_DIR
+          value: "/logs"
       extraPodSpec:
         mainContainer:
           image: rlm-orchestrator:latest
@@ -29,6 +33,13 @@ spec:
             - containerPort: 9090
               name: system
               protocol: TCP
+          volumeMounts:
+            - name: trajectory-logs
+              mountPath: /logs
+        volumes:
+          - name: trajectory-logs
+            persistentVolumeClaim:
+              claimName: rlm-logs-pvc
 
     # === Inference Frontend (OpenAI-compatible API) ===
     Frontend:
@@ -71,3 +82,30 @@ spec:
             - containerPort: 9090
               name: system
               protocol: TCP
+
+    # === RLM Trajectory Visualizer (Web UI) ===
+    Visualizer:
+      componentType: default
+      replicas: 1
+      envs:
+        - name: LOGS_DIR
+          value: "/app/logs"
+        - name: NODE_ENV
+          value: "production"
+      extraPodSpec:
+        mainContainer:
+          image: rlm-visualizer:latest
+          imagePullPolicy: Never
+          command: ["npm", "start"]
+          ports:
+            - containerPort: 3000
+              name: system
+              protocol: TCP
+          volumeMounts:
+            - name: trajectory-logs
+              mountPath: /app/logs
+              readOnly: true
+        volumes:
+          - name: trajectory-logs
+            persistentVolumeClaim:
+              claimName: rlm-logs-pvc

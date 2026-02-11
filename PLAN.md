@@ -459,3 +459,122 @@ The small Qwen3-0.6B model (600M parameters) demonstrates infrastructure functio
    - Infrastructure is ready and will work significantly better with capable models
 
 **Infrastructure Validated ✅ | Model Quality Expected ⚠️ | POC Complete ✅**
+
+## Trajectory Visualization
+
+The deployment includes an integrated web-based trajectory visualizer for debugging and exploring RLM execution traces.
+
+### Architecture
+
+- **Orchestrator**: Writes `.jsonl` trajectory logs to persistent storage (`/logs`)
+- **Shared PVC**: 10Gi persistent volume for trajectory storage (survives pod restarts)
+- **Visualizer**: Next.js web application serving on port 3000, reads from shared PVC
+
+```
+┌─────────────────────────────────────────────────────┐
+│                  Shared PVC (RWO)                   │
+│              /logs (10Gi persistent)                │
+└──────────────┬────────────────────┬─────────────────┘
+               │                    │
+        writes │              reads │
+               │                    │
+   ┌───────────▼─────────┐  ┌──────▼──────────────┐
+   │   Orchestrator      │  │    Visualizer       │
+   │                     │  │                     │
+   │ RLMLogger enabled   │  │ Next.js web UI      │
+   │ writes .jsonl       │  │ serves on port 3000 │
+   │ to /logs            │  │ reads from /logs    │
+   └─────────────────────┘  └─────────────────────┘
+```
+
+**Why RWO works in minikube:** Both pods will be scheduled on the same (only) node, so they can both mount the same RWO PVC. This is specific to single-node clusters.
+
+### Building and Deploying
+
+```bash
+# 1. Create PVC first
+kubectl apply -f deploy/pvc.yaml -n tm
+
+# 2. Build visualizer image (in minikube docker context)
+eval $(minikube docker-env)
+docker build -t rlm-visualizer:latest -f Dockerfile.visualizer .
+
+# 3. Rebuild orchestrator (if logging code changed)
+docker build -t rlm-orchestrator:latest -f Dockerfile.orchestrator .
+
+# 4. Deploy updated DGD
+kubectl delete dynamographdeployment rlm -n tm
+kubectl apply -f deploy/dgd.yaml -n tm
+```
+
+### Accessing the Visualizer
+
+```bash
+# Port-forward to visualizer service
+kubectl port-forward -n tm svc/rlm-visualizer 3000:3000
+
+# Open browser
+open http://localhost:3000
+```
+
+### Using the Visualizer
+
+1. **Generate traces**: Send completion requests to orchestrator
+   ```bash
+   kubectl port-forward -n tm svc/rlm-orchestrator 9090:9090
+   curl -X POST http://localhost:9090/completion \
+     -H 'Content-Type: application/json' \
+     -d '{"prompt": "Calculate the sum of 1 to 100"}'
+   ```
+
+2. **View traces**: Refresh the visualizer UI to see newly generated `.jsonl` files
+
+3. **Explore execution**:
+   - Trajectory Panel: Timeline of iterations
+   - Execution Panel: Code blocks and results
+   - Full trace view: Complete request/response flow
+
+### Logs Location
+
+- **In Orchestrator pod**: `/logs/rlm_YYYY-MM-DD_HH-MM-SS_RUNID.jsonl`
+- **In Visualizer pod**: `/app/logs/rlm_YYYY-MM-DD_HH-MM-SS_RUNID.jsonl`
+- **In PVC**: Persistent across pod restarts
+
+### Troubleshooting
+
+**No logs appearing:**
+- Check orchestrator logs: `kubectl logs -n tm deployment/rlm-orchestrator`
+- Verify logging enabled: `RLM_LOG_ENABLED=true` in orchestrator env
+- Check PVC mounted: `kubectl describe pod -n tm <orchestrator-pod>`
+
+**Visualizer not loading files:**
+- Check API endpoint: `curl http://localhost:3000/api/logs`
+- Verify PVC mounted in visualizer: `kubectl describe pod -n tm <visualizer-pod>`
+- Check logs directory permissions
+
+**PVC not binding:**
+- Check PVC status: `kubectl get pvc -n tm`
+- Verify storage class exists: `kubectl get storageclass`
+- For minikube, ensure default provisioner is enabled
+
+### Trade-offs and Limitations
+
+**Advantages:**
+- ✅ Integrated web UI accessible in cluster
+- ✅ No manual file copying needed
+- ✅ Real-time access to traces
+- ✅ Persistent storage survives pod restarts
+- ✅ Simple single-node minikube architecture
+
+**Limitations:**
+- ⚠️ RWO PVC won't work in multi-node production clusters (would need RWX or different architecture)
+- ⚠️ Visualizer must poll for new files (no real-time streaming)
+- ⚠️ Log files accumulate in PVC (no automatic cleanup - would need manual pruning or retention policy)
+- ⚠️ Single visualizer replica (no HA, but acceptable for dev/demo)
+
+**Future Enhancements:**
+- Add automatic log file retention policy (delete files older than N days)
+- Add WebSocket support for real-time trace streaming
+- Add authentication for multi-user access
+- Migrate to RWX-capable storage for production clusters
+- Add metrics and monitoring for trajectory analysis

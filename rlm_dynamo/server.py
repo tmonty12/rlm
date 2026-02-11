@@ -13,6 +13,7 @@ from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 
 from rlm import RLM
+from rlm.logger import RLMLogger
 
 logger = logging.getLogger(__name__)
 
@@ -24,10 +25,18 @@ INFERENCE_URL = os.environ.get("RLM_INFERENCE_URL", "http://rlm-frontend:8000/v1
 MODEL_NAME = os.environ.get("RLM_MODEL_NAME", "Qwen/Qwen3-0.6B")
 SANDBOX_URL = os.environ.get("RLM_SANDBOX_URL", "http://rlm-sandboxpool:9090")
 MAX_ITERATIONS = int(os.environ.get("RLM_MAX_ITERATIONS", "30"))
+LOG_ENABLED = os.environ.get("RLM_LOG_ENABLED", "false").lower() == "true"
+LOG_DIR = os.environ.get("RLM_LOG_DIR", "./logs")
 
 # ---------------------------------------------------------------------------
 # RLM instance
 # ---------------------------------------------------------------------------
+
+# Create logger if enabled
+rlm_logger = None
+if LOG_ENABLED:
+    logger.info(f"RLM logging enabled. Writing to {LOG_DIR}")
+    rlm_logger = RLMLogger(log_dir=LOG_DIR, file_name="rlm")
 
 rlm_instance = RLM(
     backend="vllm",
@@ -43,6 +52,7 @@ rlm_instance = RLM(
         "model_name": MODEL_NAME,
     },
     max_iterations=MAX_ITERATIONS,
+    logger=rlm_logger,
 )
 
 # ---------------------------------------------------------------------------

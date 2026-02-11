@@ -1,0 +1,12 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: rlm-logs-pvc
+  namespace: tm
+spec:
+  accessModes:
+    - ReadWriteOnce  # Works in minikube (single node)
+  storageClassName: standard  # minikube default
+  resources:
+    requests:
+      storage: 10Gi
